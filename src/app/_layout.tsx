@@ -1,18 +1,67 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { SplashScreen, Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
+import { LogBox } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { Brand } from '@/constants/brand';
+import { AuthProvider, useAuth } from '@/lib/auth';
+
+// O aviso de BloomFilter do Firestore no React Native é inofensivo (fallback automático de sincronização)
+LogBox.ignoreLogs(['@firebase/firestore: Firestore', 'BloomFilter error']);
 
 SplashScreen.preventAutoHideAsync();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60_000,
+            gcTime: 1000 * 60 * 60 * 24,
+            retry: 1,
+            refetchOnReconnect: true,
+          },
+        },
+      }),
+  );
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <SplashScreenController />
+        <RootNavigator />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+/** Mantém a splash visível até o Firebase restaurar a sessão salva. */
+function SplashScreenController() {
+  const { isLoading } = useAuth();
+  if (!isLoading) SplashScreen.hide();
+  return null;
+}
+
+function RootNavigator() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!user) queryClient.clear();
+  }, [user, queryClient]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Brand.bg } }}>
+      <Stack.Protected guard={!!user}>
+        <Stack.Screen name="(app)" />
+      </Stack.Protected>
+      <Stack.Protected guard={!user}>
+        <Stack.Screen name="sign-in" />
+        <Stack.Screen name="sign-up" />
+      </Stack.Protected>
+    </Stack>
   );
 }
