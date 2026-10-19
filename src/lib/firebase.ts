@@ -46,9 +46,16 @@ const sessionStorage = {
 const isFirstInit = getApps().length === 0;
 export const app = isFirstInit ? initializeApp(firebaseConfig) : getApp();
 
+const authPersistence =
+  Platform.OS !== 'web' && typeof getReactNativePersistence === 'function'
+    ? getReactNativePersistence(sessionStorage)
+    : undefined;
+
 // initializeAuth só pode rodar uma vez (cuidado com Fast Refresh).
 export const auth: Auth = isFirstInit
-  ? initializeAuth(app, { persistence: getReactNativePersistence(sessionStorage) })
+  ? authPersistence
+    ? initializeAuth(app, { persistence: authPersistence })
+    : initializeAuth(app)
   : getAuth(app);
 
 export const db = getFirestore(app);
