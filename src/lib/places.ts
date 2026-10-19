@@ -48,7 +48,7 @@ export type PlacesFilter = {
   cursor: QueryDocumentSnapshot<DocumentData> | null;
 };
 
-export const PAGE_SIZE = 12;
+export const PAGE_SIZE = 50;
 /** Filtro só por tag não pagina (evita índice composto); traz até este limite. */
 const TAG_ONLY_LIMIT = 100;
 

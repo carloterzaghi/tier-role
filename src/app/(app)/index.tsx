@@ -16,6 +16,14 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  RatingFilterModal,
+  SortModal,
+  getRatingFilterLabel,
+  getSortLabel,
+  type RatingFilter,
+  type SortOption,
+} from '@/components/filter-sort-modal';
 import { PlaceCard } from '@/components/place-card';
 import { PlacesMap } from '@/components/places-map';
 import { PlaceCardSkeleton } from '@/components/skeleton';
@@ -35,12 +43,58 @@ export default function Home() {
   const [searchText, setSearchText] = useState('');
   const [tagId, setTagId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+
   const search = useDebouncedValue(searchText, 400);
 
   const tags = useTags();
   const places = usePlaces(search, tagId);
 
-  const items = useMemo(() => places.data?.pages.flatMap((p) => p.items) ?? [], [places.data]);
+  const rawItems = useMemo(
+    () => places.data?.pages.flatMap((p) => p.items) ?? [],
+    [places.data],
+  );
+
+  const items = useMemo(() => {
+    // 1. Filtra por nota total
+    let filtered = rawItems;
+    if (ratingFilter === 'top') {
+      filtered = filtered.filter((p) => p.reviewCount > 0 && p.avgRating >= 7.5);
+    } else if (ratingFilter === 'mid') {
+      filtered = filtered.filter(
+        (p) => p.reviewCount > 0 && p.avgRating >= 5.0 && p.avgRating < 7.5,
+      );
+    } else if (ratingFilter === 'low') {
+      filtered = filtered.filter((p) => p.reviewCount > 0 && p.avgRating < 5.0);
+    } else if (ratingFilter === 'unrated') {
+      filtered = filtered.filter((p) => p.reviewCount === 0);
+    }
+
+    // 2. Ordena
+    const copy = [...filtered];
+    if (sortBy === 'name') {
+      copy.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+    } else if (sortBy === 'oldest') {
+      copy.sort((a, b) => a.createdAt - b.createdAt);
+    } else if (sortBy === 'rating') {
+      copy.sort((a, b) => {
+        if (a.reviewCount === 0 && b.reviewCount === 0) return b.createdAt - a.createdAt;
+        if (a.reviewCount === 0) return 1;
+        if (b.reviewCount === 0) return -1;
+        if (b.avgRating !== a.avgRating) return b.avgRating - a.avgRating;
+        return b.reviewCount - a.reviewCount;
+      });
+    } else {
+      // 'newest'
+      copy.sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    return copy;
+  }, [rawItems, ratingFilter, sortBy]);
+
   const mappedCount = useMemo(
     () =>
       items.filter(
@@ -49,7 +103,11 @@ export default function Home() {
     [items],
   );
   const firstName = (user?.displayName ?? user?.email ?? '').split(' ')[0];
-  const filtering = search.trim().length > 0 || tagId !== null;
+  const filtering =
+    search.trim().length > 0 ||
+    tagId !== null ||
+    ratingFilter !== 'all' ||
+    sortBy !== 'newest';
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['tags'] });
@@ -139,6 +197,72 @@ export default function Home() {
         </Pressable>
       </View>
 
+      {/* Barra de Ordenação e Filtro por Nota */}
+      <View style={styles.filterSortBar}>
+        <Pressable
+          onPress={() => {
+            haptic.selection();
+            setSortModalVisible(true);
+          }}
+          style={({ pressed }) => [
+            styles.filterSortBtn,
+            sortBy !== 'newest' && styles.filterSortBtnActive,
+            pressed && { opacity: 0.8 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Opções de ordenação">
+          <Text style={styles.filterSortIcon}>⇅</Text>
+          <Text
+            style={[
+              styles.filterSortLabel,
+              sortBy !== 'newest' && styles.filterSortLabelActive,
+            ]}
+            numberOfLines={1}>
+            {getSortLabel(sortBy)}
+          </Text>
+          <Text style={styles.filterSortArrow}>▾</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            haptic.selection();
+            setRatingModalVisible(true);
+          }}
+          style={({ pressed }) => [
+            styles.filterSortBtn,
+            ratingFilter !== 'all' && styles.filterSortBtnActive,
+            pressed && { opacity: 0.8 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Filtrar por nota">
+          <Text style={styles.filterSortIcon}>⭐</Text>
+          <Text
+            style={[
+              styles.filterSortLabel,
+              ratingFilter !== 'all' && styles.filterSortLabelActive,
+            ]}
+            numberOfLines={1}>
+            {getRatingFilterLabel(ratingFilter)}
+          </Text>
+          <Text style={styles.filterSortArrow}>▾</Text>
+        </Pressable>
+
+        {sortBy !== 'newest' || ratingFilter !== 'all' ? (
+          <Pressable
+            onPress={() => {
+              haptic.light();
+              setSortBy('newest');
+              setRatingFilter('all');
+            }}
+            hitSlop={8}
+            style={styles.clearFilterPill}
+            accessibilityRole="button"
+            accessibilityLabel="Limpar ordenação e notas">
+            <Text style={styles.clearFilterPillText}>✕ Limpar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
       <View style={styles.chips}>
         <TagChips
           tags={tags.data ?? []}
@@ -194,9 +318,23 @@ export default function Home() {
               </Text>
               <Text style={styles.emptyText}>
                 {filtering
-                  ? 'Tente outro nome ou outra tag.'
+                  ? 'Tente mudar a busca, a tag, a nota ou a ordenação.'
                   : 'Toque no + para cadastrar o primeiro lugar.'}
               </Text>
+              {filtering ? (
+                <Pressable
+                  onPress={() => {
+                    haptic.light();
+                    setSearchText('');
+                    setTagId(null);
+                    setRatingFilter('all');
+                    setSortBy('newest');
+                  }}
+                  style={styles.retry}
+                  accessibilityRole="button">
+                  <Text style={styles.retryText}>Limpar todos os filtros</Text>
+                </Pressable>
+              ) : null}
             </View>
           }
           ListFooterComponent={
@@ -247,6 +385,21 @@ export default function Home() {
           <Text style={styles.fabPlus}>+</Text>
         </LinearGradient>
       </Pressable>
+
+      {/* Modais de Ordenação e Filtro por Nota */}
+      <SortModal
+        visible={sortModalVisible}
+        selected={sortBy}
+        onSelect={setSortBy}
+        onClose={() => setSortModalVisible(false)}
+      />
+
+      <RatingFilterModal
+        visible={ratingModalVisible}
+        selected={ratingFilter}
+        onSelect={setRatingFilter}
+        onClose={() => setRatingModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -391,5 +544,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.5,
+  },
+  filterSortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 10,
+  },
+  filterSortBtn: {
+    flex: 1,
+    height: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Brand.surface,
+    borderColor: Brand.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    gap: 6,
+  },
+  filterSortBtnActive: {
+    borderColor: Brand.accent,
+    backgroundColor: 'rgba(255, 107, 74, 0.12)',
+  },
+  filterSortIcon: {
+    fontSize: 13,
+  },
+  filterSortLabel: {
+    flex: 1,
+    color: Brand.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterSortLabelActive: {
+    color: Brand.accent,
+  },
+  filterSortArrow: {
+    color: Brand.textMuted,
+    fontSize: 11,
+  },
+  clearFilterPill: {
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: Brand.surfaceHigh,
+    borderWidth: 1,
+    borderColor: Brand.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearFilterPillText: {
+    color: Brand.danger,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

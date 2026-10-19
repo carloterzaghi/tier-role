@@ -32,6 +32,20 @@
 * **Média Automática:** Cálculo em tempo real da nota média e total de avaliações de cada local.
 * **Opinião e Fotos:** Espaço para comentários detalhados e foto da experiência do usuário no rolê.
 
+### 🔍 Filtros Avançados e Ordenação Inteligente
+* **Ordenação Múltipla:** Ordene os rolês por:
+  * 🕒 **Mais novo adicionado** (Recentes primeiro);
+  * 📅 **Mais velho adicionado** (Antigos primeiro);
+  * ⭐ **Nota total do local** (Melhores notas primeiro, com desempate por total de avaliações);
+  * 🔤 **Nome do local (A-Z)** (Ordem alfabética).
+* **Filtro por Nota Total:** Filtre instantaneamente por faixas de avaliação:
+  * ✨ Todas as notas;
+  * 🟢 Top Tier (★ 7.5 a 10);
+  * 🟡 Médio (★ 5.0 a 7.4);
+  * 🔴 Abaixo de 5.0 (< ★ 5.0);
+  * ⚪ Ainda sem avaliações (Locais novos).
+* **Sincronização Lista & Mapa:** Toda ordenação e filtro por nota reflete simultaneamente na listagem e nos pinos do mapa.
+
 ### 🛡️ Usabilidade Mobile e Ergonomia
 * **Prevenção de Teclado Ocultando Inputs:** Detecção dinâmica da altura do teclado com auto-scroll inteligente para inputs inferiores (como o campo de *Descrição*).
 * **Scroll Desacoplado no Mapa:** O scroll da página é pausado automaticamente enquanto o usuário manuseia o mapa com o dedo, evitando conflitos de gestos.
