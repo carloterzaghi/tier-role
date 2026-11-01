@@ -182,6 +182,8 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [locatingUser, setLocatingUser] = useState(false);
   const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Espelha userLocationRef para o render (refs não podem ser lidas durante o render)
+  const [hasUserLocation, setHasUserLocation] = useState(false);
 
   const mappedPlaces = useMemo(
     () =>
@@ -260,6 +262,7 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
         };
+        setHasUserLocation(true);
         postToIframe({
           action: 'SET_USER_LOCATION',
           lat: pos.coords.latitude,
@@ -343,10 +346,10 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
 
         <Pressable
           onPress={handleLocateUser}
-          disabled={locatingUser && !userLocationRef.current}
+          disabled={locatingUser && !hasUserLocation}
           style={styles.ctrlBtn}
           accessibilityRole="button">
-          {locatingUser && !userLocationRef.current ? (
+          {locatingUser && !hasUserLocation ? (
             <ActivityIndicator size="small" color={Brand.accent} />
           ) : (
             <Text style={styles.ctrlBtnIcon}>📍</Text>

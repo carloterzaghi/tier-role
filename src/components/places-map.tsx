@@ -215,6 +215,8 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
   const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const isMapReadyRef = useRef(false);
   const pendingLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Espelha userLocationRef para o render (refs não podem ser lidas durante o render)
+  const [hasUserLocation, setHasUserLocation] = useState(false);
 
   // Filtra apenas os locais com coordenadas válidas
   const mappedPlaces = useMemo(
@@ -259,6 +261,7 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
               latitude: cached.coords.latitude,
               longitude: cached.coords.longitude,
             };
+            setHasUserLocation(true);
           }
         }
       } catch {
@@ -282,6 +285,7 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
   /** Aplica as coordenadas do usuário no Leaflet com proteção contra carregamento pendente */
   function applyUserLocation(latitude: number, longitude: number) {
     userLocationRef.current = { latitude, longitude };
+    setHasUserLocation(true);
     if (!isMapReadyRef.current) {
       pendingLocationRef.current = { lat: latitude, lng: longitude };
       return;
@@ -467,11 +471,11 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
 
         <Pressable
           onPress={handleLocateUser}
-          disabled={locatingUser && !userLocationRef.current}
+          disabled={locatingUser && !hasUserLocation}
           style={({ pressed }) => [styles.ctrlBtn, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Minha localização">
-          {locatingUser && !userLocationRef.current ? (
+          {locatingUser && !hasUserLocation ? (
             <ActivityIndicator size="small" color={Brand.accent} />
           ) : (
             <Text style={styles.ctrlBtnIcon}>📍</Text>
