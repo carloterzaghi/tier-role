@@ -194,8 +194,13 @@ function getPlacesMapHtml(
       } else {
         userMarker.setLatLng([lat, lng]);
       }
-      map.setView([lat, lng], 15, { animate: true });
+      var targetZoom = Math.max(map.getZoom() || 15, 15);
+      map.flyTo([lat, lng], targetZoom, { duration: 0.8 });
     };
+
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'MAP_READY' }));
+    }
   </script>
 </body>
 </html>`;
@@ -205,6 +210,11 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
   const webViewRef = useRef<WebView>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [locatingUser, setLocatingUser] = useState(false);
+
+  // Guarda a última localização do usuário na memória para resposta instantânea (0ms)
+  const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const isMapReadyRef = useRef(false);
+  const pendingLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // Filtra apenas os locais com coordenadas válidas
   const mappedPlaces = useMemo(
@@ -234,6 +244,33 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
     [places, selectedPlaceId],
   );
 
+  // Pré-aquece a localização em background caso a permissão já esteja concedida
+  useEffect(() => {
+    let isMounted = true;
+    async function prewarmLocation() {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status === 'granted' && isMounted) {
+          const cached = await Location.getLastKnownPositionAsync({
+            maxAge: 1000 * 60 * 60 * 2, // 2 horas
+          }).catch(() => null);
+          if (cached && isMounted && !userLocationRef.current) {
+            userLocationRef.current = {
+              latitude: cached.coords.latitude,
+              longitude: cached.coords.longitude,
+            };
+          }
+        }
+      } catch {
+        // Silencioso
+      }
+    }
+    prewarmLocation();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Atualiza os marcadores se a lista de locais mudar (ex: filtros de tag ou busca)
   useEffect(() => {
     if (webViewRef.current) {
@@ -242,11 +279,30 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
     }
   }, [placesPayload]);
 
+  /** Aplica as coordenadas do usuário no Leaflet com proteção contra carregamento pendente */
+  function applyUserLocation(latitude: number, longitude: number) {
+    userLocationRef.current = { latitude, longitude };
+    if (!isMapReadyRef.current) {
+      pendingLocationRef.current = { lat: latitude, lng: longitude };
+      return;
+    }
+    webViewRef.current?.injectJavaScript(
+      `if (window.setUserLocation) { window.setUserLocation(${latitude}, ${longitude}); } true;`,
+    );
+  }
+
   /** Mensagens do Leaflet WebView */
   function handleMessage(event: WebViewMessageEvent) {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'SELECT_PLACE' && data.placeId) {
+      if (data.type === 'MAP_READY') {
+        isMapReadyRef.current = true;
+        if (pendingLocationRef.current) {
+          const { lat, lng } = pendingLocationRef.current;
+          pendingLocationRef.current = null;
+          applyUserLocation(lat, lng);
+        }
+      } else if (data.type === 'SELECT_PLACE' && data.placeId) {
         haptic.selection();
         setSelectedPlaceId(data.placeId);
         if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
@@ -262,14 +318,25 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
     }
   }
 
-  /** Localiza o usuário no mapa */
+  /** Localiza o usuário no mapa com resposta instantânea e refinamento em background */
   async function handleLocateUser() {
-    setLocatingUser(true);
     haptic.selection();
 
+    // 1. Resposta instantânea se já temos a posição resolvida nesta sessão (0ms)
+    if (userLocationRef.current) {
+      applyUserLocation(userLocationRef.current.latitude, userLocationRef.current.longitude);
+    }
+
+    setLocatingUser(true);
+
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      // 2. Verificação rápida de permissões (sem abrir diálogo nativo se já estiver concedido)
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        perm = await Location.requestForegroundPermissionsAsync();
+      }
+
+      if (perm.status !== 'granted') {
         haptic.error();
         Alert.alert(
           'Permissão de Localização',
@@ -279,17 +346,51 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({
+      // 3. Fix imediato via cache do sistema operacional (0-50ms) se ainda não tínhamos em memória
+      let hasPosition = !!userLocationRef.current;
+      if (!hasPosition) {
+        const lastKnown = await Location.getLastKnownPositionAsync({
+          maxAge: 1000 * 60 * 60 * 2, // Até 2 horas de cache
+        }).catch(() => null);
+
+        if (lastKnown) {
+          hasPosition = true;
+          applyUserLocation(lastKnown.coords.latitude, lastKnown.coords.longitude);
+          haptic.light();
+        }
+      }
+
+      // 4. Refinamento em tempo real com timeout inteligente
+      // Se o usuário já foi posicionado no mapa, usamos timeout mais curto para não manter o botão carregando
+      const timeoutMs = hasPosition ? 4000 : 8000;
+      const freshLocPromise = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
 
-      haptic.success();
-      webViewRef.current?.injectJavaScript(
-        `if (window.setUserLocation) { window.setUserLocation(${loc.coords.latitude}, ${loc.coords.longitude}); } true;`,
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), timeoutMs),
       );
+
+      const freshLoc = await Promise.race([freshLocPromise, timeoutPromise]).catch(() => null);
+
+      if (freshLoc) {
+        applyUserLocation(freshLoc.coords.latitude, freshLoc.coords.longitude);
+        haptic.success();
+      } else if (hasPosition) {
+        // O fix rápido já posicionou o usuário com sucesso
+        haptic.success();
+      } else {
+        haptic.error();
+        Alert.alert(
+          'Localização demorando',
+          'Não foi possível obter uma leitura precisa do GPS no momento. Verifique se o GPS está ativo e tente novamente.',
+        );
+      }
     } catch {
-      haptic.error();
-      Alert.alert('Erro', 'Não foi possível obter sua localização no momento.');
+      if (!userLocationRef.current) {
+        haptic.error();
+        Alert.alert('Erro', 'Não foi possível obter sua localização no momento.');
+      }
     } finally {
       setLocatingUser(false);
     }
@@ -301,6 +402,14 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
         ref={webViewRef}
         source={htmlSource}
         onMessage={handleMessage}
+        onLoadEnd={() => {
+          isMapReadyRef.current = true;
+          if (pendingLocationRef.current) {
+            const { lat, lng } = pendingLocationRef.current;
+            pendingLocationRef.current = null;
+            applyUserLocation(lat, lng);
+          }
+        }}
         style={styles.map}
         scrollEnabled={false}
         javaScriptEnabled={true}
@@ -313,13 +422,11 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
         <Text style={styles.countBadgeText}>
           {mappedPlaces.length === 0
             ? 'Nenhum local no mapa'
-            : `📍 ${mappedPlaces.length} ${
-                mappedPlaces.length === 1 ? 'local no mapa' : 'locais no mapa'
-              }${
-                places.length > mappedPlaces.length
-                  ? ` · ${places.length - mappedPlaces.length} sem coordenadas`
-                  : ''
-              }`}
+            : `📍 ${mappedPlaces.length} ${mappedPlaces.length === 1 ? 'local no mapa' : 'locais no mapa'
+            }${places.length > mappedPlaces.length
+              ? ` · ${places.length - mappedPlaces.length} sem coordenadas`
+              : ''
+            }`}
         </Text>
       </View>
 
@@ -360,11 +467,11 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
 
         <Pressable
           onPress={handleLocateUser}
-          disabled={locatingUser}
+          disabled={locatingUser && !userLocationRef.current}
           style={({ pressed }) => [styles.ctrlBtn, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Minha localização">
-          {locatingUser ? (
+          {locatingUser && !userLocationRef.current ? (
             <ActivityIndicator size="small" color={Brand.accent} />
           ) : (
             <Text style={styles.ctrlBtnIcon}>📍</Text>

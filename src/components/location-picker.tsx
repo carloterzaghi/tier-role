@@ -249,6 +249,35 @@ export function LocationPicker({
   const [showMap, setShowMap] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const cachedLocationRef = useRef<Coordinates | null>(null);
+
+  // Pré-aquece a localização em background se a permissão já estiver concedida
+  useEffect(() => {
+    let isMounted = true;
+    async function prewarmLocation() {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status === 'granted' && isMounted) {
+          const cached = await Location.getLastKnownPositionAsync({
+            maxAge: 1000 * 60 * 60 * 2, // 2 horas
+          }).catch(() => null);
+          if (cached && isMounted) {
+            cachedLocationRef.current = {
+              latitude: cached.coords.latitude,
+              longitude: cached.coords.longitude,
+            };
+          }
+        }
+      } catch {
+        // Silencioso
+      }
+    }
+    prewarmLocation();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Busca dentro do Modal
   const [modalSearchText, setModalSearchText] = useState('');
   const [modalSearching, setModalSearching] = useState(false);
@@ -409,14 +438,18 @@ export function LocationPicker({
     }
   }
 
-  /** Obtém a localização GPS do celular e atualiza o mapa */
+  /** Obtém a localização GPS do celular e atualiza o mapa com resposta imediata */
   async function handleUseCurrentLocation(targetWebView?: WebView | null) {
     setLoadingLocation(true);
     haptic.selection();
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        perm = await Location.requestForegroundPermissionsAsync();
+      }
+
+      if (perm.status !== 'granted') {
         haptic.error();
         Alert.alert(
           'Permissão de Localização',
@@ -426,31 +459,74 @@ export function LocationPicker({
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({
+      const activeView = targetWebView ?? webViewRef.current;
+
+      // 1. Tenta fix imediato via cache em memória ou cache do sistema operacional (0-50ms)
+      let initialCoords = cachedLocationRef.current;
+      if (!initialCoords) {
+        const fastLoc = await Location.getLastKnownPositionAsync({
+          maxAge: 1000 * 60 * 60 * 2, // 2 horas
+        }).catch(() => null);
+        if (fastLoc) {
+          initialCoords = {
+            latitude: fastLoc.coords.latitude,
+            longitude: fastLoc.coords.longitude,
+          };
+          cachedLocationRef.current = initialCoords;
+        }
+      }
+
+      if (initialCoords) {
+        onCoordinatesChange(initialCoords);
+        setShowMap(true);
+        activeView?.injectJavaScript(
+          `if (window.updatePin) { window.updatePin(${initialCoords.latitude}, ${initialCoords.longitude}); } true;`,
+        );
+        haptic.success();
+        // Não bloqueia o botão enquanto faz reverse geocode
+        setLoadingLocation(false);
+        reverseGeocode(initialCoords);
+      }
+
+      // 2. Refinamento com leitura precisa e timeout inteligente
+      const timeoutMs = initialCoords ? 4000 : 8000;
+      const freshLocPromise = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-
-      const newCoords: Coordinates = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      };
-
-      onCoordinatesChange(newCoords);
-      setShowMap(true);
-      haptic.success();
-
-      const activeView = targetWebView ?? webViewRef.current;
-      activeView?.injectJavaScript(
-        `if (window.updatePin) { window.updatePin(${newCoords.latitude}, ${newCoords.longitude}); } true;`,
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), timeoutMs),
       );
 
-      await reverseGeocode(newCoords);
+      const freshLoc = await Promise.race([freshLocPromise, timeoutPromise]).catch(() => null);
+
+      if (freshLoc) {
+        const freshCoords: Coordinates = {
+          latitude: freshLoc.coords.latitude,
+          longitude: freshLoc.coords.longitude,
+        };
+        cachedLocationRef.current = freshCoords;
+        onCoordinatesChange(freshCoords);
+        setShowMap(true);
+        activeView?.injectJavaScript(
+          `if (window.updatePin) { window.updatePin(${freshCoords.latitude}, ${freshCoords.longitude}); } true;`,
+        );
+        haptic.success();
+        reverseGeocode(freshCoords);
+      } else if (!initialCoords) {
+        haptic.error();
+        Alert.alert(
+          'Erro de Localização',
+          'Não foi possível obter sua localização no momento. Você pode tocar no mapa para marcar.',
+        );
+      }
     } catch (e) {
-      haptic.error();
-      Alert.alert(
-        'Erro de Localização',
-        'Não foi possível obter sua localização no momento. Você pode tocar no mapa para marcar.',
-      );
+      if (!cachedLocationRef.current) {
+        haptic.error();
+        Alert.alert(
+          'Erro de Localização',
+          'Não foi possível obter sua localização no momento. Você pode tocar no mapa para marcar.',
+        );
+      }
       console.warn('[LocationPicker] Erro ao obter posição:', e);
     } finally {
       setLoadingLocation(false);

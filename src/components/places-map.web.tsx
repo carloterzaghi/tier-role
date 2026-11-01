@@ -167,7 +167,8 @@ function getPlacesMapHtml(
           } else {
             userMarker.setLatLng([msg.lat, msg.lng]);
           }
-          map.setView([msg.lat, msg.lng], 15, { animate: true });
+          var targetZoom = Math.max(map.getZoom() || 15, 15);
+          map.flyTo([msg.lat, msg.lng], targetZoom, { duration: 0.8 });
         }
       } catch (err) {}
     });
@@ -180,6 +181,7 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [locatingUser, setLocatingUser] = useState(false);
+  const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const mappedPlaces = useMemo(
     () =>
@@ -237,13 +239,27 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
       return;
     }
 
-    setLocatingUser(true);
     haptic.selection();
+
+    // Resposta instantânea se já temos a localização resolvida nesta sessão
+    if (userLocationRef.current) {
+      postToIframe({
+        action: 'SET_USER_LOCATION',
+        lat: userLocationRef.current.latitude,
+        lng: userLocationRef.current.longitude,
+      });
+    }
+
+    setLocatingUser(true);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocatingUser(false);
         haptic.success();
+        userLocationRef.current = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
         postToIframe({
           action: 'SET_USER_LOCATION',
           lat: pos.coords.latitude,
@@ -252,8 +268,15 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
       },
       (err) => {
         setLocatingUser(false);
-        haptic.error();
-        Alert.alert('Erro', err.message || 'Não foi possível obter sua localização.');
+        if (!userLocationRef.current) {
+          haptic.error();
+          Alert.alert('Erro', err.message || 'Não foi possível obter sua localização.');
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 6000,
+        maximumAge: 300000, // 5 min de cache para resposta instantânea
       },
     );
   }
@@ -278,13 +301,11 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
         <Text style={styles.countBadgeText}>
           {mappedPlaces.length === 0
             ? 'Nenhum local no mapa'
-            : `📍 ${mappedPlaces.length} ${
-                mappedPlaces.length === 1 ? 'local no mapa' : 'locais no mapa'
-              }${
-                places.length > mappedPlaces.length
-                  ? ` · ${places.length - mappedPlaces.length} sem coordenadas`
-                  : ''
-              }`}
+            : `📍 ${mappedPlaces.length} ${mappedPlaces.length === 1 ? 'local no mapa' : 'locais no mapa'
+            }${places.length > mappedPlaces.length
+              ? ` · ${places.length - mappedPlaces.length} sem coordenadas`
+              : ''
+            }`}
         </Text>
       </View>
 
@@ -322,10 +343,10 @@ export function PlacesMap({ places, bottomInset = 0 }: PlacesMapProps) {
 
         <Pressable
           onPress={handleLocateUser}
-          disabled={locatingUser}
+          disabled={locatingUser && !userLocationRef.current}
           style={styles.ctrlBtn}
           accessibilityRole="button">
-          {locatingUser ? (
+          {locatingUser && !userLocationRef.current ? (
             <ActivityIndicator size="small" color={Brand.accent} />
           ) : (
             <Text style={styles.ctrlBtnIcon}>📍</Text>

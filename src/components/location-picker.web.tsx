@@ -180,6 +180,11 @@ export function LocationPicker({
         haptic.error();
         Alert.alert('Erro de Localização', err.message || 'Não foi possível obter sua localização.');
       },
+      {
+        enableHighAccuracy: false,
+        timeout: 6000,
+        maximumAge: 300000,
+      },
     );
   }
 
