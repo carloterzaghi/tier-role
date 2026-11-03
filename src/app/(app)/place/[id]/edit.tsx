@@ -365,3 +365,4 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: Brand.text, fontSize: 14, fontWeight: '700' },
 });
+
