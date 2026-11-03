@@ -1,10 +1,10 @@
-# Tier Role 📍 ⭐ `v1.0.0`
+# Tier Role 📍 ⭐ `v1.0.1`
 
 > Aplicativo mobile para catalogar, avaliar e descobrir os melhores rolês e locais gastronômicos com a sua galera, com sistema de notas, fotos, tags dinâmicas e mapas interativos.
 
-![Version](https://img.shields.io/badge/version-1.0.0-FF6B4A?style=for-the-badge)
-![Expo](https://img.shields.io/badge/Expo_SDK_57-000020?style=for-the-badge&logo=expo&logoColor=white)
-![React Native](https://img.shields.io/badge/React_Native_0.86-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Version](https://img.shields.io/badge/version-1.0.1-FF6B4A?style=for-the-badge)
+![Expo](https://img.shields.io/badge/Expo_SDK_58-000020?style=for-the-badge&logo=expo&logoColor=white)
+![React Native](https://img.shields.io/badge/React_Native_0.88-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Firebase](https://img.shields.io/badge/Firebase_12-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript_6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 
@@ -24,7 +24,8 @@
 ### 🍽️ Cadastro e Gestão de Locais
 * **Fotos de Capa:** Seleção de imagens com compressão e otimização automática (`expo-image-manipulator`) antes do upload no Firebase Storage.
 * **Tags Inteligentes:** Crie e associe tags para categorizar os rolês.
-* **Limpeza Automática de Tags:** Caso um local seja deletado e alguma tag fique sem nenhum local associado, ela é removida instantaneamente do banco.
+* **Edição Exclusiva pelo Criador:** O usuário que cadastrou um local pode editar suas informações a qualquer momento (nome, endereço, descrição, tags, mapa e foto de capa), com atalhos na tela de detalhes (botão `✏️` na barra flutuante, pill no título e banner de criador).
+* **Limpeza Automática de Tags:** Caso um local seja editado ou deletado e alguma tag fique sem nenhum local associado, ela é removida instantaneamente do banco.
 * **Exclusão Democrática por Votação:** Sistema colaborativo onde usuários votam para deletar um local. O local só é excluído se mais da metade dos usuários registrados votarem favoravelmente. Ao ser deletado, as fotos correspondentes no Storage são apagadas automaticamente.
 
 ### ⭐ Avaliações e Sistema de Notas (Tier List)
@@ -56,12 +57,13 @@
 
 ## 🛠️ Tecnologias Utilizadas
 
-* **Framework:** [Expo SDK 57](https://expo.dev) com [React Native 0.86](https://reactnative.dev) e React 19.
-* **Navegação:** [Expo Router](https://docs.expo.dev/router/introduction/) (roteamento baseado em sistema de arquivos).
-* **Linguagem:** [TypeScript](https://www.typescriptlang.org/) com tipagem estrita e validação contínua.
+* **Framework:** [Expo SDK 58](https://expo.dev) com [React Native 0.88](https://reactnative.dev) e React 19.
+* **Navegação:** [Expo Router](https://docs.expo.dev/router/introduction/) (roteamento baseado em sistema de arquivos com rotas tipadas).
+* **Linguagem:** [TypeScript 6](https://www.typescriptlang.org/) com tipagem estrita e validação contínua.
+* **Build Properties & Android APK:** [`expo-build-properties`](https://docs.expo.dev/versions/latest/sdk/build-properties/) configurado para estabilidade do APK em builds de release/preview com R8 controlado.
 * **Backend as a Service:** [Firebase](https://firebase.google.com/):
   * **Firebase Authentication:** Sessões seguras com persistência em `AsyncStorage`.
-  * **Cloud Firestore:** Banco de dados NoSQL com índices otimizados para paginação e busca.
+  * **Cloud Firestore:** Banco de dados NoSQL com índices otimizados para paginação e busca, e regras de segurança granulares (permissão de edição exclusiva para o criador).
   * **Firebase Storage:** Armazenamento seguro de fotos de capas e avaliações.
 * **Mapas e Geocodificação:**
   * **Leaflet & OpenStreetMap:** Renderizado nativamente via `react-native-webview` (sem custos de chaves de API ou cobrança Google Cloud).
@@ -100,7 +102,16 @@ EXPO_PUBLIC_FIREBASE_APP_ID=seu-app-id
 ```bash
 npx expo start
 ```
-Escaneie o QR Code gerado usando o app **Expo Go** no celular ou pressione `a` para Android / `i` para iOS.
+Escaneie o QR Code gerado usando o app **Expo Go** no celular ou pressione `a` para Android / `i` para iOS. Caso seu computador e celular estejam em redes diferentes, utilize o modo de túnel:
+```bash
+npx expo start --tunnel
+```
+
+### 4. Gerar APK para Android (Preview / Standalone)
+Para gerar o arquivo `.apk` diretamente via EAS Build sem precisar de Android Studio local:
+```bash
+npx eas-cli build -p android --profile preview
+```
 
 ---
 
@@ -129,15 +140,18 @@ tier-role/
 │   │   │   ├── index.tsx         # Tela principal (Home com Lista e Mapa)
 │   │   │   ├── place/
 │   │   │   │   ├── new.tsx       # Cadastro de novo local e geolocalização
-│   │   │   │   └── [id].tsx      # Detalhes, mapa, avaliações e votação
-│   │   │   │       └── review.tsx# Formulário de avaliação com nota e foto
+│   │   │   │   ├── [id].tsx      # Detalhes, mapa, avaliações e votação
+│   │   │   │   └── [id]/
+│   │   │   │       ├── review.tsx# Formulário modal de avaliação com nota e foto
+│   │   │   │       └── edit.tsx  # Formulário modal de edição do local pelo criador
 │   │   │   └── _layout.tsx
 │   │   ├── sign-in.tsx           # Tela de Login
 │   │   ├── sign-up.tsx           # Tela de Cadastro
 │   │   └── _layout.tsx           # Guardião de autenticação de rotas
 │   ├── components/               # Componentes reutilizáveis
-│   │   ├── places-map.tsx        # Mapa geral de locais salvos
-│   │   ├── location-picker.tsx   # Seletor e mapa de ponto no cadastro
+│   │   ├── places-map.tsx        # Mapa geral de locais salvos (Mobile)
+│   │   ├── places-map.web.tsx    # Mapa geral de locais salvos (Web)
+│   │   ├── location-picker.tsx   # Seletor e mapa de ponto no cadastro/edição
 │   │   ├── place-card.tsx        # Card de local
 │   │   ├── rating-selector.tsx   # Seletor de nota 0 a 10
 │   │   ├── tag-chips.tsx         # Barra horizontal de tags
@@ -146,6 +160,7 @@ tier-role/
 │   ├── hooks/                    # Hooks de negócio e dados (usePlaces, useDebouncedValue)
 │   └── lib/                      # Serviços Firebase, imagens, regras e haptics
 ├── firebase/                     # Regras de segurança (Firestore & Storage rules)
+├── scripts/                      # Scripts de manutenção e patches de compilação
 └── package.json
 ```
 
