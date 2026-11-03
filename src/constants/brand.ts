@@ -15,5 +15,5 @@ export const Brand = {
   gradient: ['#FF6B4A', '#8B5CF6'] as const,
 };
 
-/** Versão oficial do aplicativo (lida de app.json ou padrão v1.0.0) */
-export const APP_VERSION = `v${Constants.expoConfig?.version ?? '1.0.0'}`;
+/** Versão oficial do aplicativo (lida de app.json ou padrão v1.0.1) */
+export const APP_VERSION = `v${Constants.expoConfig?.version ?? '1.0.1'}`;
