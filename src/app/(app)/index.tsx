@@ -111,7 +111,7 @@ export default function Home() {
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['tags'] });
-    return places.refetch();
+    places.refetch();
   }, [places, queryClient]);
 
   const onEnd = useCallback(() => {
@@ -344,7 +344,7 @@ export default function Home() {
               <View style={styles.listFooter}>
                 <Text style={styles.listFooterText}>Tier Role · {APP_VERSION}</Text>
               </View>
-            ) : null
+            ) : undefined
           }
         />
       )}

@@ -47,6 +47,14 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Permita que o Tier Role acesse sua localização para marcar locais no mapa."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": false
+          }
+        }
       ]
     ],
     "experiments": {

@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   View,
@@ -37,7 +38,7 @@ export default function NewPlace() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const tags = useTags();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');

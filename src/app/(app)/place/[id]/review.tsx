@@ -11,6 +11,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   TextInput,
@@ -53,7 +54,7 @@ function ReviewForm({ placeId, existing }: { placeId: string; existing?: Review 
   const queryClient = useQueryClient();
   const placeQuery = usePlaceDetail(placeId);
   const isEditing = !!existing;
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
 
   const [rating, setRating] = useState<number>(() => existing?.rating ?? 8.0);
   const [comment, setComment] = useState(() => existing?.comment ?? '');
