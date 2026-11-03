@@ -12,6 +12,7 @@ export default function AppLayout() {
       <Stack.Screen name="place/[id]" />
       <Stack.Screen name="place/new" options={{ presentation: 'modal' }} />
       <Stack.Screen name="place/[id]/review" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="place/[id]/edit" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

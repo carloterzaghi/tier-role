@@ -53,6 +53,8 @@ export default function PlaceDetailScreen() {
   const myReview = myReviewQuery.data;
   const totalUsers = totalUsersQuery.data ?? 1;
 
+  const isCreator = !!user && !!place && place.createdBy === user.uid;
+
   const deleteVotes = place?.deleteVotes ?? [];
   const votesCount = deleteVotes.length;
   const requiredVotes = getRequiredDeleteVotes(totalUsers);
@@ -74,6 +76,14 @@ export default function PlaceDetailScreen() {
   function handleGoBack() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
+  }
+
+  function handleOpenEditModal() {
+    haptic.medium();
+    router.push({
+      pathname: '/place/[id]/edit',
+      params: { id: placeId },
+    });
   }
 
   function handleOpenReviewModal() {
@@ -251,22 +261,33 @@ export default function PlaceDetailScreen() {
         <Pressable onPress={handleGoBack} style={styles.iconCircle} accessibilityRole="button" accessibilityLabel="Voltar">
           <Text style={styles.iconCircleText}>‹</Text>
         </Pressable>
-        <Pressable
-          onPress={handleVoteDelete}
-          style={[
-            styles.iconCircle,
-            styles.deleteCircle,
-            hasUserVoted && styles.deleteCircleActive,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={hasUserVoted ? 'Cancelar voto de exclusão' : 'Votar para excluir local'}>
-          <Text style={styles.deleteIconText}>🗳️</Text>
-          {votesCount > 0 ? (
-            <View style={styles.voteCountBadge}>
-              <Text style={styles.voteCountBadgeText}>{votesCount}</Text>
-            </View>
+        <View style={styles.navRightActions}>
+          {isCreator ? (
+            <Pressable
+              onPress={handleOpenEditModal}
+              style={[styles.iconCircle, styles.editCircle]}
+              accessibilityRole="button"
+              accessibilityLabel="Editar local">
+              <Text style={styles.editIconText}>✏️</Text>
+            </Pressable>
           ) : null}
-        </Pressable>
+          <Pressable
+            onPress={handleVoteDelete}
+            style={[
+              styles.iconCircle,
+              styles.deleteCircle,
+              hasUserVoted && styles.deleteCircleActive,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={hasUserVoted ? 'Cancelar voto de exclusão' : 'Votar para excluir local'}>
+            <Text style={styles.deleteIconText}>🗳️</Text>
+            {votesCount > 0 ? (
+              <View style={styles.voteCountBadge}>
+                <Text style={styles.voteCountBadgeText}>{votesCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
       </SafeAreaView>
 
       <ScrollView
@@ -294,7 +315,19 @@ export default function PlaceDetailScreen() {
 
         {/* Informações Principais do Local */}
         <View style={styles.mainInfo}>
-          <Text style={styles.placeName}>{place.name}</Text>
+          <View style={styles.nameHeaderRow}>
+            <Text style={styles.placeName}>{place.name}</Text>
+            {isCreator ? (
+              <Pressable
+                onPress={handleOpenEditModal}
+                style={({ pressed }) => [styles.editPill, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Editar local">
+                <Text style={styles.editPillIcon}>✏️</Text>
+                <Text style={styles.editPillText}>Editar</Text>
+              </Pressable>
+            ) : null}
+          </View>
 
           {place.address || (place.latitude && place.longitude) ? (
             <Pressable
@@ -325,6 +358,24 @@ export default function PlaceDetailScreen() {
 
           {/* Descrição */}
           {place.description ? <Text style={styles.description}>{place.description}</Text> : null}
+
+          {/* Atalho de Edição do Criador */}
+          {isCreator ? (
+            <View style={styles.creatorBanner}>
+              <View style={styles.creatorBannerTextWrap}>
+                <Text style={styles.creatorBannerTitle}>Você cadastrou este local 👑</Text>
+                <Text style={styles.creatorBannerSubtitle}>
+                  Mantenha as fotos, endereço, mapa e tags sempre atualizados para a comunidade.
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleOpenEditModal}
+                style={styles.creatorEditBtn}
+                accessibilityRole="button">
+                <Text style={styles.creatorEditBtnText}>✏️ Editar Local</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {/* Placar / Card Hero de Avaliação */}
           <View style={[styles.scoreHero, { borderColor: hasReviews ? tier.color : Brand.border }]}>
@@ -527,6 +578,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  navRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editCircle: {
+    backgroundColor: 'rgba(192, 132, 252, 0.22)',
+    borderColor: 'rgba(192, 132, 252, 0.45)',
+  },
+  editIconText: {
+    fontSize: 16,
+  },
   deleteCircle: {
     backgroundColor: 'rgba(255, 84, 112, 0.25)',
     borderColor: 'rgba(255, 84, 112, 0.45)',
@@ -568,11 +631,71 @@ const styles = StyleSheet.create({
     marginTop: -24,
     gap: 16,
   },
+  nameHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   placeName: {
     color: Brand.text,
     fontSize: 28,
     fontWeight: '900',
     letterSpacing: -0.5,
+    flex: 1,
+  },
+  editPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(192, 132, 252, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginTop: 4,
+  },
+  editPillIcon: {
+    fontSize: 12,
+  },
+  editPillText: {
+    color: '#C084FC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  creatorBanner: {
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(192, 132, 252, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.22)',
+    gap: 12,
+  },
+  creatorBannerTextWrap: {
+    gap: 4,
+  },
+  creatorBannerTitle: {
+    color: '#C084FC',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  creatorBannerSubtitle: {
+    color: Brand.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  creatorEditBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#C084FC',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  creatorEditBtnText: {
+    color: '#0B0B12',
+    fontSize: 13,
+    fontWeight: '800',
   },
   addressRow: {
     flexDirection: 'row',

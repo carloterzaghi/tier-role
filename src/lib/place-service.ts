@@ -10,6 +10,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -114,6 +115,104 @@ export async function createPlace(input: NewPlaceInput) {
   );
 
   return placeRef.id;
+}
+
+export type UpdatePlaceInput = {
+  placeId: string;
+  userId: string;
+  name: string;
+  address: string;
+  description: string;
+  /** ids de tags já normalizados */
+  tags: string[];
+  photo?: { uri: string; width: number } | null;
+  removePhoto?: boolean;
+  /** Coordenadas opcionais de geolocalização */
+  coordinates?: { latitude: number; longitude: number } | null;
+};
+
+/**
+ * Edita um local existente pelo seu criador:
+ * Atualiza foto (se houver alteração), tags novas, limpa tags órfãs e salva alterações no Firestore.
+ */
+export async function updatePlace(input: UpdatePlaceInput): Promise<void> {
+  const placeRef = doc(db, 'places', input.placeId);
+  const placeSnap = await getDoc(placeRef);
+
+  if (!placeSnap.exists()) {
+    throw new Error('Local não encontrado.');
+  }
+
+  const placeData = placeSnap.data();
+  if (placeData.createdBy !== input.userId) {
+    throw new Error('Apenas o criador deste local pode editá-lo.');
+  }
+
+  const base = `photos/${input.userId}/places/${input.placeId}`;
+  let coverUrl: string | null = placeData.coverUrl ?? null;
+  let coverThumbUrl: string | null = placeData.coverThumbUrl ?? null;
+
+  if (input.removePhoto) {
+    coverUrl = null;
+    coverThumbUrl = null;
+    try {
+      await Promise.allSettled([
+        deleteObject(storageRef(storage, `${base}/cover.${IMAGE_EXT}`)),
+        deleteObject(storageRef(storage, `${base}/thumb.${IMAGE_EXT}`)),
+      ]);
+    } catch {
+      // Silencioso se fotos já não existiam
+    }
+  } else if (input.photo) {
+    const photo = input.photo;
+    const { full, thumb } = await step('compressão da foto', () =>
+      compressImage(photo.uri, photo.width),
+    );
+    [coverUrl, coverThumbUrl] = await step('upload da foto', () =>
+      Promise.all([
+        uploadImage(`${base}/cover.${IMAGE_EXT}`, full.uri, IMAGE_MIME),
+        uploadImage(`${base}/thumb.${IMAGE_EXT}`, thumb.uri, IMAGE_MIME),
+      ]),
+    );
+  }
+
+  // Cria novas tags caso não existam ainda
+  await Promise.all(
+    input.tags.map(async (tag) => {
+      const tagRef = doc(db, 'tags', tag);
+      try {
+        if (!(await getDoc(tagRef)).exists()) {
+          await setDoc(tagRef, { name: tag, createdBy: input.userId, createdAt: serverTimestamp() });
+        }
+      } catch {
+        // Corrida: outro usuário já criou ou erro inofensivo
+      }
+    }),
+  );
+
+  const name = input.name.trim();
+  const oldTags: string[] = Array.isArray(placeData.tags) ? placeData.tags : [];
+
+  await step('atualização do local no Firestore', () =>
+    updateDoc(placeRef, {
+      name,
+      nameLower: name.toLowerCase(),
+      address: input.address.trim(),
+      description: input.description.trim(),
+      coverUrl,
+      coverThumbUrl,
+      tags: input.tags,
+      latitude: input.coordinates?.latitude ?? null,
+      longitude: input.coordinates?.longitude ?? null,
+      updatedAt: serverTimestamp(),
+    }),
+  );
+
+  // Limpa tags que foram removidas deste local se ficaram órfãs
+  const removedTags = oldTags.filter((t) => !input.tags.includes(t));
+  if (removedTags.length > 0) {
+    await cleanupOrphanTags(removedTags);
+  }
 }
 
 /**

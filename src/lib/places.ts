@@ -34,6 +34,7 @@ export type Place = {
   /** Coordenadas de geolocalização opcionais */
   latitude?: number | null;
   longitude?: number | null;
+  updatedAt?: number;
 };
 
 export type PlacesPage = {
@@ -69,6 +70,7 @@ function toPlace(doc: DocumentSnapshot<DocumentData>): Place {
     deleteVotes: Array.isArray(d.deleteVotes) ? d.deleteVotes : [],
     latitude: typeof d.latitude === 'number' ? d.latitude : null,
     longitude: typeof d.longitude === 'number' ? d.longitude : null,
+    updatedAt: d.updatedAt?.toMillis?.() ?? undefined,
   };
 }
 
